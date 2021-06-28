@@ -11,19 +11,18 @@
 package oksvg
 
 import (
+	"encoding/xml"
+	"errors"
 	"fmt"
+	"image/color"
 	"io"
+	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
 
 	"golang.org/x/net/html/charset"
-
-	"encoding/xml"
-	"errors"
-	"image/color"
-	"log"
-	"math"
 
 	"github.com/srwiley/rasterx"
 	"golang.org/x/image/colornames"
@@ -191,13 +190,25 @@ func (svgp *SvgPath) SetLineColor(clr color.Color) {
 }
 
 // ParseSVGColorNum reads the SFG color string e.g. #FBD9BD
-func ParseSVGColorNum(colorStr string) (r, g, b uint8, err error) {
+func ParseSVGColorNum(colorStr string) (r, g, b, a uint8, err error) {
 	colorStr = strings.TrimPrefix(colorStr, "#")
 	var t uint64
-	if len(colorStr) != 6 {
+
+	// convert to 8-char hex
+	switch len(colorStr) {
+	case 3:
 		// SVG specs say duplicate characters in case of 3 digit hex number
+		// Set FF as alpha transparency
 		colorStr = string([]byte{colorStr[0], colorStr[0],
-			colorStr[1], colorStr[1], colorStr[2], colorStr[2]})
+			colorStr[1], colorStr[1], colorStr[2], colorStr[2], 'F', 'F'})
+	case 4:
+		// SVG specs say duplicate characters in case of 4 digit hex number
+		colorStr = string([]byte{colorStr[0], colorStr[0],
+			colorStr[1], colorStr[1], colorStr[2], colorStr[2], colorStr[3], colorStr[3]})
+	case 6:
+		// Set FF as alpha transparency
+		colorStr = string([]byte{colorStr[0], colorStr[1],
+			colorStr[2], colorStr[3], colorStr[4], colorStr[5], 'F', 'F'})
 	}
 	for _, v := range []struct {
 		c *uint8
@@ -205,7 +216,8 @@ func ParseSVGColorNum(colorStr string) (r, g, b uint8, err error) {
 	}{
 		{&r, colorStr[0:2]},
 		{&g, colorStr[2:4]},
-		{&b, colorStr[4:6]}} {
+		{&b, colorStr[4:6]},
+		{&a, colorStr[6:8]}} {
 		t, err = strconv.ParseUint(v.s, 16, 8)
 		if err != nil {
 			return
@@ -318,11 +330,11 @@ func ParseSVGColor(colorStr string) (color.Color, error) {
 	}
 
 	if colorStr[0] == '#' {
-		r, g, b, err := ParseSVGColorNum(colorStr)
+		r, g, b, a, err := ParseSVGColorNum(colorStr)
 		if err != nil {
 			return nil, err
 		}
-		return color.NRGBA{r, g, b, 0xFF}, nil
+		return color.NRGBA{r, g, b, a}, nil
 	}
 	return nil, errParamMismatch
 }
